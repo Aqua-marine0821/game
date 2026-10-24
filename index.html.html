@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>티처블 머신 포즈 장애물 달리기</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- TensorFlow.js and Teachable Machine Pose Library -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8.6/dist/teachablemachine-pose.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;800&family=Jua&display=swap');
+        body {
+            font-family: 'Pretendard', sans-serif;
+            touch-action: manipulation;
+        }
+        /* Canvas Responsive Styling */
+        #gameCanvas {
+            width: 100%;
+            height: auto;
+            max-height: 480px;
+            background: #ffffff;
+            border-radius: 1.25rem;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col items-center justify-between p-4 sm:p-8">
+
+    <!-- Header Section -->
+    <header class="text-center my-4 max-w-xl">
+        <div class="inline-flex items-center gap-2 px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-semibold mb-3">
+            <i class="fa-solid fa-wand-magic-sparkles"></i> AI Pose Recognition
+        </div>
+        <h1 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight flex items-center justify-center gap-2">
+            AI 포즈 장애물 달리기
+        </h1>
+        <p class="text-slate-500 text-sm sm:text-base mt-2 font-medium">카메라 앞에서 포즈를 취해 장애물을 피해보세요</p>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-3 gap-6 my-auto items-start">
+        
+        <!-- Left Column: Camera & Status -->
+        <section class="lg:col-span-1 bg-white border border-slate-200/80 p-5 rounded-3xl flex flex-col items-center gap-4 shadow-sm hover:shadow-md transition-shadow">
+            <div class="w-full flex justify-between items-center px-1">
+                <span class="text-slate-700 text-sm font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-camera text-slate-400"></i> 웹캠 인식
+                </span>
+                <span id="aiStatus" class="text-xs px-3 py-1 rounded-full bg-slate-100 text-slate-600 font-medium border border-slate-200">
+                    모델 로딩 중...
+                </span>
+            </div>
+
+            <!-- Webcam Video Canvas Container -->
+            <div class="relative w-full aspect-4/3 bg-slate-100 rounded-2xl overflow-hidden border border-slate-200 shadow-inner flex items-center justify-center">
+                <canvas id="webcamCanvas" class="w-full h-full object-cover transform -scale-x-100"></canvas>
+                
+                <!-- Loading Overlay -->
+                <div id="loadingOverlay" class="absolute inset-0 bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center p-4 text-center gap-3">
+                    <i class="fa-solid fa-circle-notch animate-spin text-3xl text-slate-700"></i>
+                    <p id="loadingText" class="text-xs text-slate-500 font-medium">AI 모델 및 카메라를 준비 중입니다...</p>
+                </div>
+            </div>
+
+            <!-- Current Action Display -->
+            <div class="w-full bg-slate-50 p-3.5 rounded-2xl border border-slate-100 text-center">
+                <div class="text-[11px] font-bold text-slate-400 tracking-wider uppercase mb-1">인식된 동작</div>
+                <div id="detectedAction" class="text-xl font-extrabold text-slate-700 flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-user-check text-slate-400"></i> REST
+                </div>
+            </div>
+
+            <!-- Action Instruction Guide -->
+            <div class="w-full grid grid-cols-3 gap-2 text-center text-xs">
+                <div class="p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                    <div class="font-bold text-amber-600">RIGHT HAND</div>
+                    <div class="text-slate-600 text-[11px] font-medium mt-0.5">점프하기</div>
+                </div>
+                <div class="p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                    <div class="font-bold text-blue-600">LEFT HAND</div>
+                    <div class="text-slate-600 text-[11px] font-medium mt-0.5">숙이기</div>
+                </div>
+                <div class="p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                    <div class="font-bold text-slate-500">REST</div>
+                    <div class="text-slate-600 text-[11px] font-medium mt-0.5">기본 달리</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Right Column: Game Canvas & Controls -->
+        <section class="lg:col-span-2 bg-white border border-slate-200/80 p-5 rounded-3xl flex flex-col gap-4 shadow-sm hover:shadow-md transition-shadow">
+            
+            <!-- Dashboard: Score & Speed Display -->
+            <div class="flex justify-between items-center bg-slate-50 px-6 py-3.5 rounded-2xl border border-slate-100">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center font-bold">
+                        <i class="fa-solid fa-trophy text-lg"></i>
+                    </div>
+                    <div>
+                        <div class="text-[10px] font-bold text-slate-400 tracking-wider uppercase">SCORE</div>
+                        <div id="scoreDisplay" class="text-2xl font-black text-slate-800 tracking-tight">0</div>
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-slate-200/60 text-slate-700 flex items-center justify-center font-bold">
+                        <i class="fa-solid fa-bolt text-lg"></i>
+                    </div>
+                    <div>
+                        <div class="text-[10px] font-bold text-slate-400 tracking-wider uppercase">SPEED</div>
+                        <div id="speedDisplay" class="text-2xl font-black text-slate-700 tracking-tight">1.0x</div>
+                    </div>
+                </div>
+
+                <button id="restartBtn" onclick="resetGame()" class="bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white font-bold px-5 py-2.5 rounded-xl transition duration-150 shadow-sm flex items-center gap-2 text-sm cursor-pointer">
+                    <i class="fa-solid fa-rotate-right text-xs"></i> 다시 시작
+                </button>
+            </div>
+
+            <!-- Game View Area -->
+            <div class="relative w-full rounded-2xl overflow-hidden border border-slate-200">
+                <canvas id="gameCanvas" width="800" height="400"></canvas>
+
+                <!-- Game Over Screen -->
+                <div id="gameOverOverlay" class="hidden absolute inset-0 bg-white/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-fade-in">
+                    <div class="bg-rose-50 text-rose-500 w-16 h-16 rounded-full flex items-center justify-center mb-4 border border-rose-100 shadow-sm">
+                        <i class="fa-solid fa-flag-checkered text-2xl"></i>
+                    </div>
+                    <h2 class="text-3xl font-extrabold text-slate-900 tracking-tight mb-1">GAME OVER</h2>
+                    <p class="text-slate-500 text-sm mb-6">장애물과 충돌했습니다</p>
+                    
+                    <div class="bg-slate-50 px-8 py-4 rounded-2xl border border-slate-100 mb-6 flex gap-8 text-center">
+                        <div>
+                            <div class="text-[10px] font-bold text-slate-400 tracking-wider uppercase mb-0.5">최종 점수</div>
+                            <div id="finalScore" class="text-2xl font-black text-slate-800">0</div>
+                        </div>
+                        <div class="border-r border-slate-200"></div>
+                        <div>
+                            <div class="text-[10px] font-bold text-slate-400 tracking-wider uppercase mb-0.5">최고 기록</div>
+                            <div id="highScore" class="text-2xl font-black text-amber-500">0</div>
+                        </div>
+                    </div>
+
+                    <button onclick="resetGame()" class="bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white text-base font-bold px-8 py-3 rounded-xl transition duration-150 shadow-md flex items-center gap-2 cursor-pointer transform hover:scale-[1.02]">
+                        <i class="fa-solid fa-play text-xs"></i> 다시 도전하기
+                    </button>
+                </div>
+            </div>
+            
+            <p class="text-xs text-slate-400 text-center font-medium">
+                Tip: 상반신 전체가 카메라 화면에 잘 잡히도록 배치해 주세요.
+            </p>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="text-xs text-slate-400 font-medium my-4 text-center">
+        Powered by Google Teachable Machine Pose Model
+    </footer>
+
+    <!-- Game Logic & AI Script -->
+    <script>
+        // --- CONSTANTS & CONFIGURATIONS ---
+        const MODEL_URL = "https://teachablemachine.withgoogle.com/models/XNL1_pAV7/";
+        const CANVAS_WIDTH = 800;
+        const CANVAS_HEIGHT = 400;
+        const GROUND_Y = 320; // Y position for the ground
+
+        // --- GAME STATE ---
+        let score = 0;
+        let highScore = 0;
+        let speedMultiplier = 1.0;
+        let isGameOver = false;
+        let gameLoopReqId = null;
+        let frameCount = 0;
+
+        // --- AI MODEL STATE ---
+        let model, maxPredictions, webcam;
+        let currentPose = "REST"; // REST, LEFT HAND, RIGHT HAND
+
+        // --- DOM ELEMENTS ---
+        const gameCanvas = document.getElementById("gameCanvas");
+        const ctx = gameCanvas.getContext("2d");
+        const webcamCanvas = document.getElementById("webcamCanvas");
+        const webcamCtx = webcamCanvas.getContext("2d");
+        
+        const scoreDisplay = document.getElementById("scoreDisplay");
+        const speedDisplay = document.getElementById("speedDisplay");
+        const detectedActionDisplay = document.getElementById("detectedAction");
+        const aiStatus = document.getElementById("aiStatus");
+        const loadingOverlay = document.getElementById("loadingOverlay");
+        const loadingText = document.getElementById("loadingText");
+        const gameOverOverlay = document.getElementById("gameOverOverlay");
+        const finalScoreDisplay = document.getElementById("finalScore");
+        const highScoreDisplay = document.getElementById("highScore");
+
+        // --- PLAYER OBJECT ---
+        const player = {
+            x: 100,
+            y: GROUND_Y - 56,
+            width: 40,
+            height: 56,
+            velocityY: 0,
+            gravity: 0.8,
+            jumpStrength: -15,
+            isGrounded: true,
+            isDuck: false,
+
+            update() {
+                // Apply pose inputs
+                if (currentPose === "RIGHT HAND" && this.isGrounded && !this.isDuck) {
+                    this.velocityY = this.jumpStrength;
+                    this.isGrounded = false;
+                }
+
+                if (currentPose === "LEFT HAND" && this.isGrounded) {
+                    this.isDuck = true;
+                } else {
+                    this.isDuck = false;
+                }
+
+                // Physics update
+                this.y += this.velocityY;
+                this.velocityY += this.gravity;
+
+                // Ground Collision
+                const currentHeight = this.isDuck ? 28 : 56;
+                if (this.y + currentHeight >= GROUND_Y) {
+                    this.y = GROUND_Y - currentHeight;
+                    this.velocityY = 0;
+                    this.isGrounded = true;
+                }
+            },
+
+            draw() {
+                ctx.save();
+                
+                const drawHeight = this.isDuck ? 28 : 56;
+                const drawY = this.y;
+
+                // Player Shadow (Minimalist soft shadow)
+                ctx.fillStyle = "rgba(0,0,0,0.06)";
+                ctx.beginPath();
+                ctx.ellipse(this.x + this.width / 2, GROUND_Y + 4, this.width / 2 + (GROUND_Y - drawY)/12, 4, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Character Body (Clean Rounded Style)
+                ctx.fillStyle = this.isDuck ? "#2563EB" : "#1E293B"; // Dark Slate (Blue when ducking)
+                
+                // Rounded rectangle body
+                ctx.beginPath();
+                ctx.roundRect(this.x, drawY, this.width, drawHeight, 10);
+                ctx.fill();
+
+                // Eyes
+                ctx.fillStyle = "#ffffff";
+                if (this.isDuck) {
+                    ctx.fillRect(this.x + 22, drawY + 8, 10, 5);
+                } else {
+                    ctx.fillRect(this.x + 22, drawY + 12, 10, 8);
+                    ctx.fillStyle = "#0f172a";
+                    ctx.fillRect(this.x + 28, drawY + 14, 3, 5);
+                }
+
+                // Running Animation Legs
+                if (this.isGrounded && !this.isDuck) {
+                    const legOffset = Math.sin(frameCount * 0.35) * 8;
+                    ctx.strokeStyle = "#1E293B";
+                    ctx.lineWidth = 4;
+                    ctx.lineCap = "round";
+                    ctx.beginPath();
+                    ctx.moveTo(this.x + 10, drawY + drawHeight);
+                    ctx.lineTo(this.x + 10 - legOffset, GROUND_Y);
+                    ctx.moveTo(this.x + 28, drawY + drawHeight);
+                    ctx.lineTo(this.x + 28 + legOffset, GROUND_Y);
+                    ctx.stroke();
+                }
+
+                ctx.restore();
+            },
+
+            getBounds() {
+                const height = this.isDuck ? 28 : 56;
+                return {
+                    x: this.x + 4,
+                    y: this.y + 4,
+                    width: this.width - 8,
+                    height: height - 8
+                };
+            }
+        };
+
+        // --- OBSTACLES ---
+        let obstacles = [];
+
+        class Obstacle {
+            constructor(type) {
+                this.type = type; // 'GROUND' or 'AIR'
+                this.width = type === 'GROUND' ? 32 : 45;
+                this.height = type === 'GROUND' ? 45 : 32;
+                this.x = CANVAS_WIDTH + 50;
+                
+                if (type === 'GROUND') {
+                    // Ground obstacle: Jump over with RIGHT HAND
+                    this.y = GROUND_Y - this.height;
+                    this.color = '#F43F5E'; // Minimal Rose Red
+                } else {
+                    // Air obstacle: Duck under with LEFT HAND
+                    this.y = GROUND_Y - 90;
+                    this.color = '#3B82F6'; // Minimal Blue
+                }
+            }
+
+            update(speed) {
+                this.x -= speed;
+            }
+
+            draw() {
+                ctx.save();
+                
+                // Shadow
+                ctx.fillStyle = "rgba(0,0,0,0.05)";
+                ctx.beginPath();
+                ctx.ellipse(this.x + this.width / 2, GROUND_Y + 4, this.width / 2, 4, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Obstacle Shape
+                ctx.fillStyle = this.color;
+
+                if (this.type === 'GROUND') {
+                    // Triangular Obstacle with rounded corners
+                    ctx.beginPath();
+                    ctx.roundRect(this.x, this.y, this.width, this.height, 8);
+                    ctx.fill();
+                } else {
+                    // Floating obstacle
+                    ctx.beginPath();
+                    ctx.roundRect(this.x, this.y, this.width, this.height, 8);
+                    ctx.fill();
+                }
+
+                ctx.restore();
+            }
+
+            getBounds() {
+                return {
+                    x: this.x,
+                    y: this.y,
+                    width: this.width,
+                    height: this.height
+                };
+            }
+        }
+
+        // --- BACKGROUND DECORATION ---
+        function drawBackground() {
+            // Clear Canvas (White)
+            ctx.fillStyle = "#FFFFFF";
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+            // Ground Baseline (Minimal Thin Line)
+            ctx.fillStyle = "#E2E8F0"; // Light Gray
+            ctx.fillRect(0, GROUND_Y, CANVAS_WIDTH, 2);
+
+            // Subtle Grid/Dots for Minimal Aesthetic
+            ctx.fillStyle = "#F1F5F9";
+            for (let x = (frameCount * -1) % 40; x < CANVAS_WIDTH; x += 40) {
+                ctx.fillRect(x, GROUND_Y + 12, 12, 2);
+            }
+        }
+
+        // --- AABB COLLISION DETECTION ---
+        function checkCollision(rect1, rect2) {
+            return (
+                rect1.x < rect2.x + rect2.width &&
+                rect1.x + rect1.width > rect2.x &&
+                rect1.y < rect2.y + rect2.height &&
+                rect1.y + rect1.height > rect2.y
+            );
+        }
+
+        // --- GAME LOOP ---
+        function gameLoop() {
+            if (isGameOver) return;
+
+            frameCount++;
+
+            // Speed & Score Progression
+            score += 1;
+            speedMultiplier = 1.0 + Math.floor(score / 350) * 0.15;
+            
+            scoreDisplay.textContent = Math.floor(score / 10);
+            speedDisplay.textContent = speedMultiplier.toFixed(1) + 'x';
+
+            // Background
+            drawBackground();
+
+            // Player logic
+            player.update();
+            player.draw();
+
+            // Obstacle Spawning Logic
+            const minSpawnInterval = Math.max(65, 140 - Math.floor(speedMultiplier * 15));
+            if (frameCount % minSpawnInterval === 0 || (obstacles.length === 0 && frameCount > 30)) {
+                const type = Math.random() > 0.5 ? 'GROUND' : 'AIR';
+                obstacles.push(new Obstacle(type));
+            }
+
+            // Obstacles logic
+            const baseSpeed = 6;
+            const currentSpeed = baseSpeed * speedMultiplier;
+
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                const obs = obstacles[i];
+                obs.update(currentSpeed);
+                obs.draw();
+
+                // Check collision
+                if (checkCollision(player.getBounds(), obs.getBounds())) {
+                    triggerGameOver();
+                    return;
+                }
+
+                // Remove off-screen obstacles
+                if (obs.x + obs.width < -50) {
+                    obstacles.splice(i, 1);
+                }
+            }
+
+            gameLoopReqId = requestAnimationFrame(gameLoop);
+        }
+
+        function triggerGameOver() {
+            isGameOver = true;
+            cancelAnimationFrame(gameLoopReqId);
+
+            const finalScore = Math.floor(score / 10);
+            if (finalScore > highScore) {
+                highScore = finalScore;
+            }
+
+            finalScoreDisplay.textContent = finalScore;
+            highScoreDisplay.textContent = highScore;
+            gameOverOverlay.classList.remove("hidden");
+        }
+
+        function resetGame() {
+            if (gameLoopReqId) cancelAnimationFrame(gameLoopReqId);
+
+            score = 0;
+            speedMultiplier = 1.0;
+            isGameOver = false;
+            frameCount = 0;
+            obstacles = [];
+            
+            player.y = GROUND_Y - player.height;
+            player.velocityY = 0;
+            player.isGrounded = true;
+
+            gameOverOverlay.classList.add("hidden");
+            gameLoop();
+        }
+
+        // --- TEACHABLE MACHINE POSE MODEL INTEGRATION ---
+        async function initAI() {
+            const modelURL = MODEL_URL + "model.json";
+            const metadataURL = MODEL_URL + "metadata.json";
+
+            try {
+                // Load Teachable Machine Pose Model
+                model = await tmPose.load(modelURL, metadataURL);
+                maxPredictions = model.getTotalClasses();
+
+                // Setup Webcam
+                const size = 300;
+                const flip = true; // mirror webcam
+                webcam = new tmPose.Webcam(size, size, flip);
+                await webcam.setup();
+                await webcam.play();
+
+                // Setup Canvas for Webcam
+                webcamCanvas.width = size;
+                webcamCanvas.height = size;
+
+                // Update Loading UI
+                loadingOverlay.classList.add("hidden");
+                aiStatus.textContent = "AI 감지 중";
+                aiStatus.className = "text-xs px-3 py-1 rounded-full bg-emerald-50 text-emerald-600 font-semibold border border-emerald-200";
+
+                // Start AI Loop
+                window.requestAnimationFrame(aiLoop);
+
+                // Start Game Loop after AI is initialized
+                resetGame();
+
+            } catch (error) {
+                console.error("AI Initialization Error:", error);
+                loadingText.textContent = "웹캠 또는 AI 모델 로드 실패!";
+                aiStatus.textContent = "오류 발생";
+                aiStatus.className = "text-xs px-3 py-1 rounded-full bg-rose-50 text-rose-600 font-semibold border border-rose-200";
+            }
+        }
+
+        async function aiLoop(timestamp) {
+            webcam.update();
+            await predictPose();
+            window.requestAnimationFrame(aiLoop);
+        }
+
+        async function predictPose() {
+            const { pose, posenetOutput } = await model.estimatePose(webcam.canvas);
+            const prediction = await model.predict(posenetOutput);
+
+            let highestProbability = 0;
+            let detectedClass = "REST";
+
+            for (let i = 0; i < maxPredictions; i++) {
+                const prob = prediction[i].probability;
+                if (prob > highestProbability) {
+                    highestProbability = prob;
+                    detectedClass = prediction[i].className;
+                }
+            }
+
+            if (highestProbability > 0.70) {
+                currentPose = detectedClass;
+            } else {
+                currentPose = "REST";
+            }
+
+            // Update Action UI Display
+            updatePoseUI(currentPose);
+
+            // Draw webcam frame and skeleton onto canvas
+            if (webcam.canvas) {
+                webcamCtx.drawImage(webcam.canvas, 0, 0);
+                if (pose) {
+                    const minPartConfidence = 0.5;
+                    tmPose.drawKeypoints(pose.keypoints, minPartConfidence, webcamCtx);
+                    tmPose.drawSkeleton(pose.keypoints, minPartConfidence, webcamCtx);
+                }
+            }
+        }
+
+        function updatePoseUI(action) {
+            let iconClass = "fa-user-check";
+            let textColor = "text-slate-700";
+
+            if (action === "RIGHT HAND") {
+                iconClass = "fa-hand-point-up";
+                textColor = "text-amber-600";
+            } else if (action === "LEFT HAND") {
+                iconClass = "fa-hand-point-down";
+                textColor = "text-blue-600";
+            } else {
+                action = "REST";
+            }
+
+            detectedActionDisplay.className = `text-xl font-extrabold ${textColor} flex items-center justify-center gap-2`;
+            detectedActionDisplay.innerHTML = `<i class="fa-solid ${iconClass}"></i> ${action}`;
+        }
+
+        // --- KEYBOARD FALLBACK FOR TESTING ---
+        window.addEventListener("keydown", (e) => {
+            if (e.key === "ArrowUp") {
+                currentPose = "RIGHT HAND";
+            } else if (e.key === "ArrowDown") {
+                currentPose = "LEFT HAND";
+            }
+        });
+
+        window.addEventListener("keyup", (e) => {
+            if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                currentPose = "REST";
+            }
+        });
+
+        // Initialize App on Window Load
+        window.onload = () => {
+            initAI();
+        };
+    </script>
+</body>
+</html>
